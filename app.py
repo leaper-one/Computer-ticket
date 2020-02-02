@@ -5,21 +5,17 @@ import mixin_config
 import uuid
 from mixin_api import MIXIN_API
 import prs_utility
-from flask import Flask, render_template, g, request, redirect, session, url_for, flash, Blueprint
-from flask_restful import Api, Resource
-from Crypto.PublicKey import RSA
-
+import pressone_config
 import requests
-import json
 import time
-from io import BytesIO
-import base64
-import gzip
-import prs_lib
-
 import fundmethood as fm
 from assets import CNB
 
+
+
+'''
+用余生成一个可操作的 mixin network 用户实例
+'''
 def generateMixinAPI(private_key,pin_token,session_id,user_id,pin,client_secret):
     mixin_config.private_key       = private_key
     mixin_config.pin_token         = pin_token
@@ -43,7 +39,9 @@ def index():
 def not_found(error):
     return make_response(jsonify({'error': 'Not found'}), 404)
 
-
+'''
+生成一套 mixin network 用户信息
+'''
 @app.route('/api/v1/creat_id/', methods=['GET'])
 def create_userid():
     r = fm.genMixinUser()
@@ -52,14 +50,11 @@ def create_userid():
     userid = userInfo.get('data').get('user_id')
     sessionid = userInfo.get('data').get('session_id')
     pintoken = userInfo.get('data').get('pin_token')
-    print(type(userInfo))
-    print(type(private_key))
-    print(type(userid))
-    print(type(sessionid))
-    print(type(pintoken))
     return jsonify({'userid': userid, 'private_key': private_key, 'sessionid': sessionid, 'pintoken': pintoken}), 201
 
-
+'''
+充值
+'''
 @app.route('/api/v1/charge/', methods=['POST'])
 def charge():
     now = time.time()
@@ -75,7 +70,9 @@ def charge():
     url = fm.genAPaylink(userid, trace=trace, asset=CNB, amount=amount, memo='CHARGE')
     return jsonify({'time': now, 'userid': userid, 'charge_url': url}), 201
 
-
+'''
+签名并发布
+'''
 @app.route('/api/v1/pub/', methods=['POST'])
 def create_pub():
     if not request.json:
@@ -93,21 +90,6 @@ def create_pub():
 
     NewUserInstance = generateMixinAPI(private_key, pintoken, sessionid, userid, pin, "")
 
-    # pay = NewUserInstance.transferTo(mixin_config.client_id, CNB, 1, 'pay', trace, '000000','')
-    # print(pay)
-    # for i in (0, 20):
-    #     # print(mixin_api.verifyPayment(CNB, mixin_config.client_id, "1", trace))
-    #     # payment_trace = mixin_api.verifyPayment(CNB, mixin_config.client_id, "1", trace).get("data").get("status")
-    #     if True or payment_trace == 'paid':
-    #         pub = fm.pub_text(userid, data)
-    #         pub_result = {
-    #             'createdAt': pub.get('createdAt'),
-    #             'data_id': pub.get('id'),
-    #             'userid': userid,
-    #             'trace': trace,
-    #             'data': data
-    #         }
-    #         break
 
     pub = fm.pub_text(userid, data)
     pub_result = {
@@ -118,6 +100,49 @@ def create_pub():
         'data': data
     }
     return jsonify(pub_result), 201
+
+'''
+根据 userid， blockid， data， trace 校验四者是否匹配
+'''
+@app.route('/api/v1/blocks/', methods=['POST'])
+def blocks():
+    if not request.json:
+        abort(400)
+    j = request.json
+    data = j.get('data')
+    userid = j.get('userid')
+    blockid = j.get('blockid')
+    trace = j.get('trace')
+
+    texthash = prs_utility.keccak256(text=userid + r'\n' + data + r'\n' + trace)
+
+    asked_data = {'file_hash': texthash, }
+
+    datahash = prs_utility.hash_block_data(asked_data)
+
+    r = requests.get('https://press.one/api/v2/blocks/'+blockid)
+    result = r.json()
+    print(result)
+    print(datahash)
+    print(result[0].get('hash'))
+    if datahash == result[0].get('hash'):
+        response = {
+            'userid': userid,
+            'blockid': blockid,
+            'data': data,
+            'datahash': datahash,
+            'status': 'matched'
+        }
+    else:
+        response = {
+            'userid': userid,
+            'blockid': blockid,
+            'data': data,
+            'datahash': datahash,
+            'status': 'unmatched'
+        }
+
+    return jsonify(response), 201
 
 
 if __name__ == '__main__':
