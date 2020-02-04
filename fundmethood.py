@@ -21,6 +21,7 @@ import prs_utility
 import mixin_config
 from mixin_api import MIXIN_API
 import random, string
+import umsgpack
 
 mixin_api = MIXIN_API(mixin_config)
 
@@ -123,3 +124,24 @@ def pub_text(userid, data, trace=genTrace()):
     req = requests.post(post_url, json=payload)
 
     return req.json()
+
+'''
+打包exin_core_memo
+'''
+def exin_memo(asset_id="c6d0c728-2624-429b-8e0d-d9d19b6592fa"): # 默认BTC
+    memo = base64.b64encode(umsgpack.packb({
+        "A": uuid.UUID("{" + asset_id + "}").bytes
+    }))
+    # gaFBxBDG0McoJiRCm44N2dGbZZL6
+    memo_str = str(memo, encoding='utf-8')
+    return memo_str
+
+'''
+解包 memo
+'''
+def exin_uuid(memo):
+    _uuid = uuid.UUID(
+        bytes=umsgpack.unpackb(base64.b64decode(memo))["A"]
+    )
+    # c6d0c728-2624-429b-8e0d-d9d19b6592fa
+    return _uuid
